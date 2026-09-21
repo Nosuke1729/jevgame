@@ -1,0 +1,27 @@
+{
+  "name": "jevgame",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "build:pages": "node scripts/build-pages.mjs",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check:jev": "node --import tsx scripts/check-jev.ts"
+  },
+  "dependencies": {
+    "next": "16.0.10",
+    "react": "19.2.1",
+    "react-dom": "19.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.27",
+    "@types/react": "19.2.11",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "^0.28.2",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  }
+}
