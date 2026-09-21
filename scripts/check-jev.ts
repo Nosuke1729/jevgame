@@ -39,7 +39,7 @@ async function main() {
       body: JSON.stringify(state),
     })
     : await POST(request);
-  const result = await response.json();
+  const result = await response.json() as Record<string, unknown>;
   if (!response.ok) {
     console.error(`Jev check failed: HTTP ${response.status}, ${result.error ?? "unknown_error"}`);
     process.exitCode = 1;

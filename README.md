@@ -7,13 +7,14 @@ Jev を敵ファイターの戦術判断に使う、ブラウザーで遊べる 
 - Next.js 16 / React 19 / TypeScript
 - HTML Canvas 2D による軽量描画（追加の描画ライブラリは不要）
 - Next.js のサーバー側 API route (`/api/decision`)
+- GitHub Pages 用の Cloudflare Worker API (`/decision`)
 - TypeSafe の Jev System One API
 
 ゲームループは固定 60 Hz の更新と `requestAnimationFrame` 描画です。Jev は約300〜680 ms 間隔（難易度で変化）で戦術意図とプレイヤー行動予測をまとめて判断します。キャラクターの操作・物理・当たり判定はローカルのゲームロジックが実行します。通信は非同期で、応答待ちでもゲームは止まりません。古い応答は破棄します。
 
 ## セットアップ
 
-Node.js 20.9 以降を用意してください。
+Node.js 22 以降を用意してください。
 
 ```bash
 npm install
@@ -57,6 +58,23 @@ Jev の実通信には有効な API キーとネットワーク接続が必要�
 
 ## GitHub Pages 版
 
-`npm run build:pages` で `out/` に静的サイトを生成します。`main` への push で `.github/workflows/deploy-pages.yml` がテスト・ビルド・公開を行います。GitHub のリポジトリ設定で Pages の公開元を「GitHub Actions」にしてください。公開先は `https://nosuke1729.github.io/jevgame/` です。PC ブラウザーでキーボード操作できます。
+`npm run build:pages` で `out/` に静的サイトを生成します。`main` への push で `.github/workflows/deploy-pages.yml` がテスト・ビルド・公開を行います。GitHub のリポジトリ設定で Pages の公開元を「GitHub Actions」にしてください。公開先は [https://nosuke1729.github.io/jevgame/](https://nosuke1729.github.io/jevgame/) です。PC ブラウザーでキーボード操作できます。
 
-GitHub Pages はサーバー側 API を実行できません。そのため Pages 版は、プレイヤー行動の記録と予測を使う標準AIで遊べますが、Jev の実通信は行いません。`JEV_API_KEY` を Pages・GitHub Actions・クライアント JavaScript に登録しないでください。Jev 対戦を公開するには、別途サーバー側 API を安全にホストする必要があります。ローカルの Next.js 版では従来どおり Jev を使用できます。
+GitHub Pages はサーバー側 API を実行できません。公開 API の URL を設定するまでは、プレイヤー行動の記録と予測を使う標準AIで遊べます。ローカルの Next.js 版では従来どおり Jev を使用できます。
+
+## 公開 Jev API サーバー
+
+`src/server/worker.ts` は GitHub Pages 版のための Cloudflare Worker です。TypeSafe の API キーは Worker の Secret にだけ保管し、ブラウザー・Pages・GitHub Actions には渡しません。Worker は `https://nosuke1729.github.io` からの `/decision` POST だけを受け付け、入力サイズと構造を検証します。Cloudflare のレート制限は IP ごとに 240 回/分、Durable Object による全体上限は UTC 日付ごとに 500 回です。Origin/CORS は認証ではなく、偽装可能です。この上限に達した場合、ゲームは標準AIへ切り替わります。Jev API の利用量・課金も別途確認してください。
+
+既存の Cloudflare アカウントで Worker を公開する場合は、Node.js 22 以降で以下を実行します。`JEV_API_KEY` の値をコマンド行や GitHub に記載しないでください。
+
+```bash
+npm ci
+npm run typecheck:worker
+npx wrangler login
+npx wrangler deploy --secrets-file .env.local
+```
+
+最後のコマンドは Git 追跡対象外の `.env.local` にある `JEV_API_KEY` を暗号化された Cloudflare Secret として登録し、Worker と同時に公開します。Worker の URL（例: `https://jevgame-api.<account>.workers.dev/decision`）が確定したら、GitHub リポジトリの Actions 変数 `JEV_DECISION_URL` にその URL を設定し、Pages ワークフローを再実行します。ローカルで公開版を生成する場合は `JEV_DECISION_URL=https://.../decision npm run build:pages` を使います。URL は公開情報ですが、`JEV_API_KEY` は引き続き `.env.local` と Cloudflare Secret のみに置きます。Cloudflare Worker のデプロイ先・Secret 登録・Actions 変数の設定が済むまでは、Pages 版は標準AIのみです。
+
+参考: [Cloudflare Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)、[Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)、[Durable Objects](https://developers.cloudflare.com/durable-objects/get-started/)。

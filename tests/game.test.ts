@@ -7,6 +7,7 @@ import { fallbackDecision } from "../src/game/ai/FallbackAI";
 import { PlayerBehaviorTracker } from "../src/game/ai/PlayerBehaviorTracker";
 import { advanceMatch, createMatch, finishRound, startMatch } from "../src/game/state/MatchManager";
 import { buildJevRequest, parseJevResponse } from "../src/lib/jev/JevClient";
+import { validState } from "../src/lib/jev/validate";
 import type { Controls, DecisionState } from "../src/game/types";
 
 const controls = (patch: Partial<Controls> = {}): Controls => ({ ...EMPTY_CONTROLS, ...patch });
@@ -100,6 +101,8 @@ test("Jev answer validation rejects malformed choices and probability maps", () 
   const stats = new PlayerBehaviorTracker().snapshot();
   const state: DecisionState = { aiHpRatio: 1, playerHpRatio: 1, aiStaminaRatio: 1, playerStaminaRatio: 1, distance: 300, playerIsAttacking: false, playerIsHeavyAttacking: false, playerIsGuarding: false, playerIsJumping: false, aiAttackReady: true, aiHeavyAttackReady: true, aiDodgeReady: true, distanceToLeftWall: 500, distanceToRightWall: 400, behavior: stats };
   const request = buildJevRequest(state);
+  assert.equal(validState(state), true);
+  assert.equal(validState({ ...state, behavior: { ...state.behavior, recent: ["invalid"] } }), false);
   assert.equal(request.questions.nextAction.type, "choice");
   const probs = { attack: .4, heavyAttack: .1, dodge: .2, guard: .1, approach: .1, retreat: .05, jump: .03, wait: .02 };
   const response = { answers: { nextAction: { type: "choice", choice: "approach" }, playerPrediction: { type: "choice", choice: "attack", probabilities: probs } } };

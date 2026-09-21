@@ -19,12 +19,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run typecheck:worker
       - run: npm test
       - run: npm run build:pages
+        env:
+          JEV_DECISION_URL: ${{ vars.JEV_DECISION_URL }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: out

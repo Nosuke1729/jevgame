@@ -1,18 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildJevRequest, parseJevResponse } from "../../../lib/jev/JevClient";
-import type { DecisionState } from "../../../game/types";
+import { validState } from "../../../lib/jev/validate";
 
 export const runtime = "nodejs";
-
-function validState(value: unknown): value is DecisionState {
-  if (!value || typeof value !== "object") return false;
-  const state = value as Record<string, unknown>;
-  const numbers = ["aiHpRatio", "playerHpRatio", "aiStaminaRatio", "playerStaminaRatio", "distance", "distanceToLeftWall", "distanceToRightWall"];
-  const booleans = ["playerIsAttacking", "playerIsHeavyAttacking", "playerIsGuarding", "playerIsJumping", "aiAttackReady", "aiHeavyAttackReady", "aiDodgeReady"];
-  return numbers.every((key) => typeof state[key] === "number" && Number.isFinite(state[key]) && (state[key] as number) >= 0 && (state[key] as number) <= 1000)
-    && booleans.every((key) => typeof state[key] === "boolean")
-    && !!state.behavior && typeof state.behavior === "object";
-}
 
 export async function POST(request: NextRequest) {
   let body: unknown;

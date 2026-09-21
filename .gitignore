@@ -3,6 +3,8 @@ node_modules/
 out/
 coverage/
 *.tsbuildinfo
+worker-configuration.d.ts
+.wrangler/
 .env*
 !.env.example
 .DS_Store

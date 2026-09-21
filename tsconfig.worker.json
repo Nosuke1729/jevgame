@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "types": []
+  },
+  "include": [
+    "worker-configuration.d.ts",
+    "src/server/**/*.ts",
+    "src/lib/jev/**/*.ts",
+    "src/game/types.ts"
+  ],
+  "exclude": ["node_modules"]
+}

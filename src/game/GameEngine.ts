@@ -3,7 +3,7 @@ import { createFighter, updateCharacter } from "./characters/CharacterController
 import { resolveAttack, type HitResult } from "./combat/CombatSystem";
 import { AIController } from "./ai/AIController";
 import { fallbackDecision } from "./ai/FallbackAI";
-import { JEV_API_ENABLED } from "./ai/JevAvailability";
+import { JEV_API_ENABLED, JEV_DECISION_URL } from "./ai/JevAvailability";
 import { PlayerBehaviorTracker, type BehaviorContext } from "./ai/PlayerBehaviorTracker";
 import { advanceMatch, createMatch, finishRound, startMatch } from "./state/MatchManager";
 import type { Controls, Decision, DecisionState, Difficulty, Effect, Fighter, GameSnapshot, Intent, Mode, Prediction } from "./types";
@@ -208,7 +208,7 @@ export class GameEngine {
     this.requestPending = true;
     const id = ++this.decisionId;
     const started = performance.now();
-    void fetch("/api/decision", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) })
+    void fetch(JEV_DECISION_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) })
       .then(async (response) => { if (!response.ok) throw new Error("Jev unavailable"); return response.json() as Promise<Decision>; })
       .then((decision) => {
         if (id !== this.decisionId || this.match.phase !== "fighting" || performance.now() - started > 900) return;
