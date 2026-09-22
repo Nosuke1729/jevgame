@@ -1,4 +1,5 @@
 export type Side = "player" | "ai";
+export type GameMode = "2d" | "3d";
 export type Difficulty = "easy" | "normal" | "hard";
 export type Action = "idle" | "run" | "jump" | "normalAttack" | "heavyAttack" | "dodge" | "guard" | "hitStun" | "guardBreak";
 export type Intent = "approach" | "retreat" | "normalAttack" | "heavyAttack" | "dodge" | "guard" | "jump" | "wait";
@@ -10,6 +11,10 @@ export interface Fighter {
   side: Side;
   x: number;
   y: number;
+  z: number;
+  vz: number;
+  headingX: number;
+  headingZ: number;
   vx: number;
   vy: number;
   facing: -1 | 1;
@@ -30,7 +35,8 @@ export interface Fighter {
 }
 
 export interface Controls {
-  move: -1 | 0 | 1;
+  move: number;
+  depth?: number;
   jump: boolean;
   normalAttack: boolean;
   heavyAttack: boolean;
@@ -74,6 +80,7 @@ export interface Decision {
 export interface Effect {
   x: number;
   y: number;
+  z?: number;
   vx: number;
   vy: number;
   life: number;
@@ -92,6 +99,7 @@ export interface MatchState {
 }
 
 export interface GameSnapshot {
+  gameMode: GameMode;
   paused: boolean;
   player: Fighter;
   ai: Fighter;

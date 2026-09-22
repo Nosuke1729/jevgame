@@ -2,6 +2,7 @@ import type { Difficulty } from "./types";
 
 export const ARENA = { width: 960, height: 540, floor: 437, left: 42, right: 918 } as const;
 export const MAX_HP = 100;
+export const ARENA_DEPTH = { back: -220, front: 220 } as const;
 export const MAX_STAMINA = 100;
 export const FIGHTER_HALF_WIDTH = 22;
 export const GRAVITY = 1750;
@@ -21,6 +22,9 @@ export const KEY_BINDINGS = {
   left: "KeyA",
   right: "KeyD",
   jump: "KeyW",
+  depthBack: "KeyW",
+  depthFront: "KeyS",
+  jump3d: "Space",
   normalAttack: "KeyJ",
   heavyAttack: "KeyK",
   dodge: "KeyL",

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Check, CircleHelp, Maximize, Minimize, Pause, Play, RotateCcw, Settings2, Swords, Target } from "lucide-react";
+import { ArrowRight, Box, Check, CircleHelp, Maximize, Minimize, Pause, Play, RotateCcw, Settings2, Swords, Target, Square } from "lucide-react";
 import { ARENA, DIFFICULTIES } from "../game/constants";
 import { JEV_API_ENABLED } from "../game/ai/JevAvailability";
-import type { Difficulty } from "../game/types";
+import type { Difficulty, GameMode } from "../game/types";
+import { groundDistance } from "../game/spatial";
 import { BattleHud } from "./BattleHud";
 import { ControlsDialog, controlLabels } from "./ControlsDialog";
 import { TouchControls } from "./TouchControls";
@@ -15,13 +16,14 @@ const actionNames: Record<string, string> = { idle: "待機", run: "移動", jum
 
 export default function Game() {
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
+  const [gameMode, setGameMode] = useState<GameMode>("2d");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [help, setHelp] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState("");
   const rootRef = useRef<HTMLElement>(null);
   const resumeAfterHelp = useRef(false);
-  const game = useGameSession(reducedMotion);
+  const game = useGameSession(reducedMotion, gameMode);
   const { snapshot } = game;
   const phase = snapshot.match.phase;
   const title = phase === "title";
@@ -32,6 +34,8 @@ export default function Game() {
     try {
       const stored = localStorage.getItem("jev-difficulty");
       if (stored === "easy" || stored === "normal" || stored === "hard") setDifficulty(stored);
+      const storedMode = localStorage.getItem("jev-game-mode");
+      if (storedMode === "2d" || storedMode === "3d") setGameMode(storedMode);
       const motion = localStorage.getItem("jev-reduced-motion");
       setReducedMotion(motion === null ? matchMedia("(prefers-reduced-motion: reduce)").matches : motion === "true");
     } catch { /* Preferences are optional when storage is unavailable. */ }
@@ -41,6 +45,7 @@ export default function Game() {
   }, []);
 
   const chooseDifficulty = (value: Difficulty) => { setDifficulty(value); try { localStorage.setItem("jev-difficulty", value); } catch {} };
+  const chooseMode = (value: GameMode) => { game.title(); setGameMode(value); try { localStorage.setItem("jev-game-mode", value); } catch {} };
   const toggleMotion = () => { const value = !reducedMotion; setReducedMotion(value); try { localStorage.setItem("jev-reduced-motion", String(value)); } catch {} };
   const openHelp = () => { resumeAfterHelp.current = inMatch && !snapshot.paused; game.pause(); setHelp(true); };
   const closeHelp = () => { setHelp(false); if (resumeAfterHelp.current) game.resume(); };
@@ -63,24 +68,28 @@ export default function Game() {
     </header>
     <div className="game-layout">
       <section className="play-section" aria-label="対戦">
-        <div className="section-toolbar"><div><h1>対戦</h1><span className="mode-label">ひとりで遊ぶ</span></div><div className="arena-tools">{inMatch && <button className="toolbar-button" onClick={() => snapshot.paused ? game.resume() : game.pause()}>{snapshot.paused ? <Play size={16} /> : <Pause size={16} />}<span>{snapshot.paused ? "再開" : "一時停止"}</span><kbd>Esc</kbd></button>}<button className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? "全画面を終了" : "全画面表示"} title={fullscreen ? "全画面を終了" : "全画面表示"}>{fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button></div></div>
+        <div className="section-toolbar"><div><h1>対戦</h1><span className="mode-label">{gameMode === "3d" ? "3D 立体対戦" : "2D 横視点"}</span></div><div className="arena-tools">{inMatch && <button className="toolbar-button" onClick={() => snapshot.paused ? game.resume() : game.pause()}>{snapshot.paused ? <Play size={16} /> : <Pause size={16} />}<span>{snapshot.paused ? "再開" : "一時停止"}</span><kbd>Esc</kbd></button>}<button className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? "全画面を終了" : "全画面表示"} title={fullscreen ? "全画面を終了" : "全画面表示"}>{fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button></div></div>
+        {title && <fieldset className="game-mode-picker"><legend>遊ぶモード</legend>{(["2d", "3d"] as GameMode[]).map(mode => <label key={mode} className={gameMode === mode ? "selected" : ""}><input type="radio" name="game-mode" checked={gameMode === mode} onChange={() => chooseMode(mode)} value={mode} aria-label={mode === "2d" ? "2D 横視点" : "3D 立体対戦"} />{mode === "2d" ? <Square size={20} /> : <Box size={20} />}<span><b>{mode === "2d" ? "2D 横視点" : "3D 立体対戦"}</b><small>{mode === "2d" ? "左右の間合いで勝負" : "奥行きを使って回り込む"}</small></span>{gameMode === mode && <Check size={15} />}</label>)}</fieldset>}
         <div className="arena-frame">
           <BattleHud player={snapshot.player} ai={snapshot.ai} match={snapshot.match} />
-          <div className={`stage ${title ? "is-title" : ""}`} ref={game.stageRef} tabIndex={0} aria-label="対戦アリーナ。AとDで移動、Jで攻撃、Escで一時停止。" onKeyDown={event => { if (event.code === "Enter" && title && event.target === event.currentTarget) game.start(difficulty); }}>
-            <canvas ref={game.canvasRef} width={ARENA.width} height={ARENA.height} aria-label="夕暮れの道場で戦う2人のファイター" />
-            <span className="stage-caption" aria-hidden="true">夕凪の道場</span>
+          <div className={`stage ${title ? "is-title" : ""}`} ref={game.stageRef} tabIndex={0} aria-label={gameMode === "3d" ? "3D対戦アリーナ。WASDで移動、Spaceでジャンプ、Escで一時停止。" : "対戦アリーナ。AとDで移動、Jで攻撃、Escで一時停止。"} onKeyDown={event => { if (event.code === "Enter" && title && event.target === event.currentTarget) game.start(difficulty); }}>
+            <canvas ref={game.canvasRef} width={ARENA.width} height={ARENA.height} aria-label="夕暮れの道場で戦う2人のファイター" style={{ visibility: gameMode === "3d" ? "hidden" : "visible" }} aria-hidden={gameMode === "3d"} />
+            <div className="three-stage" ref={game.threeContainerRef} hidden={gameMode !== "3d"} />
+            <span className="stage-caption" aria-hidden="true">夕凪の道場 {gameMode === "3d" ? "・ 3D" : ""}</span>
+            {gameMode === "3d" && !snapshot.paused && (phase === "intro" || phase === "roundEnd") && <div className="round-overlay" role="status"><span>第{snapshot.match.round}ラウンド</span><strong>{phase === "intro" ? "開始！" : snapshot.match.lastWinner === "player" ? "あなたの勝利" : "相手の勝利"}</strong></div>}
             {title && <div className="lobby-overlay"><div className="lobby-panel">
               <span className="lobby-tag"><span /> 1 対 1 ・ 2本先取</span><h2>対戦をはじめる</h2><p>あなたの動きを覚える相手と、<br />攻めと守りの駆け引きを。</p>
               <fieldset className="difficulty-picker"><legend>難易度</legend><div>{(["easy", "normal", "hard"] as Difficulty[]).map(value => <label key={value} className={difficulty === value ? "selected" : ""}><input type="radio" name="difficulty" value={value} checked={difficulty === value} onChange={() => chooseDifficulty(value)} /><span>{DIFFICULTIES[value].label}</span></label>)}</div></fieldset>
-              <p className="difficulty-description">{descriptions[difficulty]}</p><button className="button primary start-button" onClick={() => game.start(difficulty)}><Play size={17} fill="currentColor" />対戦開始<ArrowRight size={18} /></button><button className="lobby-help" onClick={openHelp}>はじめて遊ぶ方へ <CircleHelp size={14} /></button>
+              <p className="difficulty-description">{descriptions[difficulty]}</p>{gameMode === "3d" && <p className="mode-controls-hint">WASD で前後左右 ／ Space でジャンプ</p>}<button className="button primary start-button" disabled={gameMode === "3d" && game.graphics !== "ready"} onClick={() => game.start(difficulty)}><Play size={17} fill="currentColor" />{gameMode === "3d" && game.graphics === "loading" ? "3Dを準備中…" : "対戦開始"}<ArrowRight size={18} /></button><button className="lobby-help" onClick={openHelp}>はじめて遊ぶ方へ <CircleHelp size={14} /></button>
             </div><div className="lobby-seal" aria-hidden="true">読<br />み<br />合<br />い</div></div>}
             {snapshot.paused && <div className="pause-overlay"><div className="pause-panel"><span className="overlay-icon"><Pause size={23} /></span><h2>ひと休み</h2><p>準備ができたら、続きから。</p><button className="button primary full-width" onClick={game.resume}><Play size={17} />対戦を再開</button><button className="button subtle full-width" onClick={game.title}>タイトルへ戻る</button><small>Esc キーでも再開できます</small></div></div>}
-            {finished && <div className="result-overlay"><div className="result-panel"><span className="lobby-tag">最終結果</span><h2>{snapshot.match.lastWinner === "player" ? "あなたの勝利" : "相手の勝利"}</h2><div className="result-score"><b>{snapshot.match.playerWins}</b><span>—</span><b>{snapshot.match.aiWins}</b></div><p>{snapshot.match.lastWinner === "player" ? "読み合いを制しました。次の一戦へ。" : "次は攻め方を変えて、もう一度。"}</p><button className="button primary full-width" onClick={() => game.start(difficulty)}><RotateCcw size={17} />もう一度戦う</button><button className="button subtle full-width" onClick={game.title}>難易度を変える</button></div></div>}
+            {finished && <div className="result-overlay"><div className="result-panel"><span className="lobby-tag">最終結果</span><h2>{snapshot.match.lastWinner === "player" ? "あなたの勝利" : "相手の勝利"}</h2><div className="result-score"><b>{snapshot.match.playerWins}</b><span>—</span><b>{snapshot.match.aiWins}</b></div><p>{snapshot.match.lastWinner === "player" ? "読み合いを制しました。次の一戦へ。" : "次は攻め方を変えて、もう一度。"}</p><button className="button primary full-width" onClick={() => game.start(difficulty)}><RotateCcw size={17} />もう一度戦う</button><button className="button subtle full-width" onClick={game.title}>モード・難易度を変える</button></div></div>}
+            {gameMode === "3d" && game.graphics === "error" && <div className="graphics-error" role="alert"><h2>3Dの表示を続けられません</h2><p>WebGLが使えるブラウザーで再読み込みするか、2Dで遊んでください。</p><button className="button primary" onClick={() => chooseMode("2d")}>2Dで遊ぶ</button></div>}
           </div>
           <div className="arena-status"><span><i className={`status-dot ${snapshot.mode === "jev" ? "connected" : ""}`} />{status}</span><span>{DIFFICULTIES[title ? difficulty : snapshot.difficulty].label}<span className="status-separator">·</span>{inMatch ? "Esc で一時停止" : "先に2ラウンドで勝利"}</span></div>
         </div>
-        <TouchControls disabled={!inMatch || snapshot.paused || help} onDown={game.touchDown} onUp={game.touchUp} />
-        <div className="keyboard-strip" aria-label="キーボード操作">{controlLabels.map(([key, label]) => <span key={key}><kbd>{key}</kbd>{label}</span>)}</div>
+        <TouchControls gameMode={gameMode} disabled={!inMatch || snapshot.paused || help || game.graphics !== "ready"} onDown={game.touchDown} onUp={game.touchUp} />
+        <div className="keyboard-strip" aria-label="キーボード操作">{controlLabels(gameMode).map(([key, label]) => <span key={key}><kbd>{key}</kbd>{label}</span>)}</div>
         <p className="play-tip"><span>ひとこと</span> 強攻撃を外したら、すぐに攻めずに相手の出方を見よう。</p>
       </section>
       <aside className="insight-section" aria-label="相手の戦術">
@@ -98,10 +107,10 @@ export default function Game() {
       `描画速度: ${Math.round(snapshot.fps)} FPS`, `あなたの状態: ${actionNames[snapshot.player.action]}`, `AIの状態: ${actionNames[snapshot.ai.action]}`,
       `AIの直近行動: ${actionNames[snapshot.lastAiAction]}`, `Jevの直近判断: ${snapshot.lastJevDecision ? actionNames[snapshot.lastJevDecision] : "なし"}`,
       `Jev応答時間: ${snapshot.jevLatency === null ? "なし" : `${snapshot.jevLatency} ms`}`, `判断時刻: ${snapshot.decisionTime === null ? "なし" : new Date(snapshot.decisionTime).toLocaleTimeString("ja-JP")}`,
-      `判断モード: ${snapshot.mode === "jev" ? "Jev" : "標準AI"}`, `一時停止: ${snapshot.paused}`, `距離: ${Math.round(Math.abs(snapshot.player.x - snapshot.ai.x))}`, `記録した行動: ${snapshot.behavior.count}件`,
+      `対戦モード: ${snapshot.gameMode.toUpperCase()}`, `判断モード: ${snapshot.mode === "jev" ? "Jev" : "標準AI"}`, `一時停止: ${snapshot.paused}`, `距離: ${Math.round(groundDistance(snapshot.player, snapshot.ai, snapshot.gameMode))}`, `あなたの奥行き: ${Math.round(snapshot.player.z)}`, `相手の奥行き: ${Math.round(snapshot.ai.z)}`, `記録した行動: ${snapshot.behavior.count}件`,
       ...Object.entries(snapshot.behavior.overall).map(([action, ratio]) => `${actionNames[action] ?? action}: ${Math.round(ratio * 100)}%`),
       `AI接近時の回避: ${Math.round(snapshot.behavior.whenAiApproaches.dodge * 100)}%`, `強攻撃失敗後の回避: ${Math.round(snapshot.behavior.afterHeavyMiss.dodge * 100)}%`, `低HP時の後退: ${Math.round(snapshot.behavior.lowHp.retreat * 100)}%`,
     ].join("\n")}</pre></div>}
-    <ControlsDialog open={help} onClose={closeHelp} />
+    <ControlsDialog open={help} onClose={closeHelp} gameMode={gameMode} />
   </main>;
 }

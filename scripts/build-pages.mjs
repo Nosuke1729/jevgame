@@ -16,6 +16,8 @@ await build({
   entryNames: "app",
   bundle: true,
   format: "esm",
+  splitting: true,
+  chunkNames: "chunks/[name]-[hash]",
   platform: "browser",
   target: "es2022",
   minify: true,

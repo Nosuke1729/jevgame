@@ -9,9 +9,116 @@ import { advanceMatch, createMatch, finishRound, startMatch } from "../src/game/
 import { buildJevRequest, parseJevResponse } from "../src/lib/jev/JevClient";
 import { validState } from "../src/lib/jev/validate";
 import { GameEngine } from "../src/game/GameEngine";
+import { AIController } from "../src/game/ai/AIController";
+import { groundDistance, separateSpatialFighters } from "../src/game/spatial";
+import { ARENA_DEPTH } from "../src/game/constants";
 import type { Controls, DecisionState } from "../src/game/types";
 
 const controls = (patch: Partial<Controls> = {}): Controls => ({ ...EMPTY_CONTROLS, ...patch });
+
+test("3D movement uses depth, normalizes diagonals and stays inside the arena", () => {
+  const opponent = createFighter("ai");
+  const straight = createFighter("player");
+  const diagonal = createFighter("player");
+  updateCharacter(straight, controls({ depth: 1 }), opponent, .1, "3d");
+  updateCharacter(diagonal, controls({ move: 1, depth: 1 }), opponent, .1, "3d");
+  assert.equal(straight.z, 26);
+  assert.ok(Math.abs(Math.hypot(diagonal.x - 260, diagonal.z) - 26) < .0001);
+  for (let i = 0; i < 600; i++) updateCharacter(straight, controls({ depth: 1 }), opponent, 1 / 60, "3d");
+  assert.equal(straight.z, ARENA_DEPTH.front);
+  for (let i = 0; i < 600; i++) updateCharacter(straight, controls({ depth: -1 }), opponent, 1 / 60, "3d");
+  assert.equal(straight.z, ARENA_DEPTH.back);
+  updateCharacter(diagonal, controls({ depth: 1, jump: true }), opponent, 1 / 60, "2d");
+  assert.equal(diagonal.z, 0);
+  assert.equal(diagonal.vz, 0);
+  assert.ok(diagonal.vy < 0, "2D retains jumping independently of depth input");
+});
+
+test("3D attacks use depth and facing, and apply depth knockback", () => {
+  const attacker = createFighter("player"), target = createFighter("ai");
+  target.x = attacker.x;
+  target.z = 180;
+  attacker.headingX = 0;
+  attacker.headingZ = 1;
+  attacker.action = "normalAttack";
+  attacker.actionTime = .12;
+  assert.equal(resolveAttack(attacker, target, "3d"), null, "same x does not hit across depth");
+  target.z = -70;
+  assert.equal(resolveAttack(attacker, target, "3d"), null, "cannot hit behind locked attack heading");
+  target.z = 70;
+  assert.equal(resolveAttack(attacker, target, "3d")?.damage, 10);
+  assert.equal(target.vx, 0);
+  assert.ok(target.vz > 0);
+  assert.equal(resolveAttack(attacker, target, "3d"), null, "one hit per attack");
+});
+
+test("3D directional guard and depth dodge preserve combat rules", () => {
+  const attacker = createFighter("player"), target = createFighter("ai");
+  target.x = attacker.x; target.z = 70;
+  attacker.headingX = 0; attacker.headingZ = 1;
+  attacker.action = "normalAttack"; attacker.actionTime = .12;
+  target.headingX = 0; target.headingZ = -1; target.guarding = true;
+  assert.equal(resolveAttack(attacker, target, "3d")?.kind, "guard");
+  attacker.attackHasHit = false;
+  target.headingZ = 1;
+  assert.equal(resolveAttack(attacker, target, "3d")?.kind, "hit", "guard does not cover the back");
+  const dodger = createFighter("ai");
+  dodger.x = attacker.x; dodger.z = 70;
+  updateCharacter(dodger, controls({ depth: 1, dodge: true }), attacker, 1 / 60, "3d");
+  assert.equal(dodger.vx, 0);
+  assert.equal(dodger.vz, 540);
+  attacker.attackHasHit = false;
+  assert.equal(resolveAttack(attacker, dodger, "3d")?.kind, "dodge");
+});
+
+test("3D AI follows an opponent on the depth axis and attacks at close range", () => {
+  const ai = createFighter("ai"), player = createFighter("player"), controller = new AIController();
+  player.x = ai.x; player.z = 200;
+  controller.setIntent("normalAttack");
+  for (let i = 0; i < 80; i++) {
+    updateCharacter(ai, controller.controls(ai, player, 1 / 60, "3d"), player, 1 / 60, "3d");
+    if (resolveAttack(ai, player, "3d")) break;
+  }
+  assert.ok(ai.z > 0);
+  assert.equal(player.hp, 90);
+  assert.equal(ai.headingX, 0);
+  assert.equal(ai.headingZ, 1);
+});
+
+test("3D collisions separate discs without blocking fighters on different depth lanes", () => {
+  const a = createFighter("player"), b = createFighter("ai");
+  b.x = a.x; b.z = 100;
+  separateSpatialFighters(a, b);
+  assert.equal(a.x, b.x);
+  assert.equal(b.z, 100);
+  b.z = 10;
+  separateSpatialFighters(a, b);
+  assert.ok(Math.abs(groundDistance(a, b, "3d") - 44) < .0001);
+  b.x = a.x; b.z = a.z;
+  separateSpatialFighters(a, b);
+  assert.equal(groundDistance(a, b, "3d"), 44);
+});
+
+test("mode switching resets depth, retains 2D and cannot change a running match", () => {
+  const game = new GameEngine();
+  game.setGameMode("3d");
+  game.start("easy");
+  assert.equal(game.snapshot().gameMode, "3d");
+  game.player.z = 80;
+  game.setGameMode("2d");
+  assert.equal(game.gameMode, "3d");
+  game.setPaused(true);
+  const before = game.snapshot();
+  game.update(1 / 60, controls({ depth: 1 }));
+  assert.deepEqual(game.snapshot(), before);
+  game.toTitle();
+  game.setGameMode("2d");
+  game.start("normal");
+  assert.equal(game.snapshot().gameMode, "2d");
+  assert.equal(game.player.z, 0);
+  assert.equal(game.ai.z, 0);
+  assert.equal(game.paused, false);
+});
 
 test("pause freezes the round, fighters and effects, and resume continues the same match", () => {
   const game = new GameEngine();

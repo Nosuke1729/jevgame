@@ -1,9 +1,11 @@
 import { ARENA, ATTACKS, FIGHTER_HALF_WIDTH, GRAVITY, MAX_HP, MAX_STAMINA } from "../constants";
-import type { Controls, Fighter, Side } from "../types";
+import type { Controls, Fighter, GameMode, Side } from "../types";
+import { clampGround } from "../spatial";
 
 export function createFighter(side: Side): Fighter {
   return {
     side, x: side === "player" ? 260 : 700, y: ARENA.floor, vx: 0, vy: 0,
+    z: 0, vz: 0, headingX: side === "player" ? 1 : -1, headingZ: 0,
     facing: side === "player" ? 1 : -1, hp: MAX_HP, stamina: MAX_STAMINA,
     speed: 260, jumpPower: 680, action: "idle", actionTime: 0,
     attackCooldown: 0, dodgeCooldown: 0, hitStun: 0, guarding: false,
@@ -19,7 +21,10 @@ export interface CharacterEvents {
   heavyMiss?: boolean;
 }
 
-export function updateCharacter(f: Fighter, input: Controls, opponent: Fighter, dt: number): CharacterEvents {
+export function updateCharacter(f: Fighter, input: Controls, opponent: Fighter, dt: number, mode: GameMode = "2d"): CharacterEvents {
+  const depth = mode === "3d" ? (input.depth ?? 0) : 0;
+  const length = Math.max(1, Math.hypot(input.move, depth));
+  const moveX = input.move / length, moveZ = depth / length;
   const events: CharacterEvents = {};
   const previousAction = f.action;
   f.actionTime += dt;
@@ -38,11 +43,15 @@ export function updateCharacter(f: Fighter, input: Controls, opponent: Fighter, 
   const locked = f.action === "normalAttack" || f.action === "heavyAttack" || f.action === "dodge" || f.action === "hitStun" || f.action === "guardBreak";
   if (!locked) {
     f.facing = opponent.x >= f.x ? 1 : -1;
+    const targetDistance = Math.hypot(opponent.x - f.x, opponent.z - f.z);
+    f.headingX = mode === "3d" && targetDistance > .001 ? (opponent.x - f.x) / targetDistance : f.facing;
+    f.headingZ = mode === "3d" && targetDistance > .001 ? (opponent.z - f.z) / targetDistance : 0;
     f.guarding = input.guard && f.stamina > 0 && f.y >= ARENA.floor - 1;
     if (f.guarding) {
       f.stamina = Math.max(0, f.stamina - 7 * dt);
       f.staminaDelay = 0.28;
-      f.vx = input.move * f.speed * 0.23;
+      f.vx = moveX * f.speed * 0.23;
+      f.vz = moveZ * f.speed * 0.23;
       setAction(f, "guard");
       if (previousAction !== "guard") events.guardStarted = true;
       if (f.stamina === 0) {
@@ -51,13 +60,15 @@ export function updateCharacter(f: Fighter, input: Controls, opponent: Fighter, 
         setAction(f, "guardBreak");
       }
     } else {
-      f.vx = input.move * f.speed;
+      f.vx = moveX * f.speed;
+      f.vz = moveZ * f.speed;
       if (input.dodge && f.dodgeCooldown <= 0 && f.stamina >= 23 && f.y >= ARENA.floor - 1) {
         f.stamina -= 23;
         f.staminaDelay = 0.5;
         f.dodgeCooldown = 1.15;
         f.dodgeInvulnerable = 0.22;
-        f.vx = (input.move || -f.facing) * 540;
+        f.vx = mode === "3d" ? (Math.hypot(moveX, moveZ) > 0 ? moveX : -f.headingX) * 540 : (input.move || -f.facing) * 540;
+        f.vz = mode === "3d" ? (Math.hypot(moveX, moveZ) > 0 ? moveZ : -f.headingZ) * 540 : 0;
         setAction(f, "dodge");
         events.dodged = true;
       } else if (input.heavyAttack && f.attackCooldown <= 0 && f.stamina >= ATTACKS.heavyAttack.stamina) {
@@ -71,19 +82,23 @@ export function updateCharacter(f: Fighter, input: Controls, opponent: Fighter, 
           f.vy = -f.jumpPower;
           events.jumped = true;
         }
-        setAction(f, f.y < ARENA.floor - 1 || f.vy < 0 ? "jump" : input.move ? "run" : "idle");
+        setAction(f, f.y < ARENA.floor - 1 || f.vy < 0 ? "jump" : input.move || depth ? "run" : "idle");
       }
     }
   } else if (f.action === "normalAttack" || f.action === "heavyAttack") {
     f.vx *= Math.max(0, 1 - 8 * dt);
+    f.vz *= Math.max(0, 1 - 8 * dt);
   } else if (f.action === "hitStun" || f.action === "guardBreak") {
     f.vx *= Math.max(0, 1 - 5 * dt);
+    f.vz *= Math.max(0, 1 - 5 * dt);
   }
 
   if (!f.guarding && f.staminaDelay <= 0) f.stamina = Math.min(MAX_STAMINA, f.stamina + 25 * dt);
   f.vy += GRAVITY * dt;
   f.x = Math.max(ARENA.left + FIGHTER_HALF_WIDTH, Math.min(ARENA.right - FIGHTER_HALF_WIDTH, f.x + f.vx * dt));
   f.y = Math.min(ARENA.floor, f.y + f.vy * dt);
+  if (mode === "3d") { f.z += f.vz * dt; clampGround(f); }
+  else { f.z = 0; f.vz = 0; }
   if (f.y === ARENA.floor && f.vy > 0) f.vy = 0;
   return events;
 }

@@ -6,9 +6,11 @@ import { fallbackDecision } from "./ai/FallbackAI";
 import { JEV_API_ENABLED, JEV_DECISION_URL } from "./ai/JevAvailability";
 import { PlayerBehaviorTracker, type BehaviorContext } from "./ai/PlayerBehaviorTracker";
 import { advanceMatch, createMatch, finishRound, startMatch } from "./state/MatchManager";
-import type { Controls, Decision, DecisionState, Difficulty, Effect, Fighter, GameSnapshot, Intent, Mode, Prediction } from "./types";
+import type { Controls, Decision, DecisionState, Difficulty, Effect, Fighter, GameMode, GameSnapshot, Intent, Mode, Prediction } from "./types";
+import { groundDistance, separateSpatialFighters } from "./spatial";
 
 export class GameEngine {
+  gameMode: GameMode = "2d";
   paused = false;
   player = createFighter("player");
   ai = createFighter("ai");
@@ -37,7 +39,14 @@ export class GameEngine {
 
   constructor() { this.prediction = fallbackDecision(this.decisionState(), "normal"); }
 
-  start(difficulty: Difficulty): void {
+  setGameMode(mode: GameMode): void {
+    if (this.match.phase !== "title") return;
+    this.gameMode = mode;
+    this.toTitle();
+  }
+
+  start(difficulty: Difficulty, gameMode: GameMode = this.gameMode): void {
+    this.gameMode = gameMode;
     this.paused = false;
     this.difficulty = difficulty;
     this.player = createFighter("player");
@@ -116,9 +125,9 @@ export class GameEngine {
       this.decide();
     }
 
-    const aiInput = this.controller.controls(this.ai, this.player, step);
-    const playerEvents = updateCharacter(this.player, input, this.ai, step);
-    const aiEvents = updateCharacter(this.ai, aiInput, this.player, step);
+    const aiInput = this.controller.controls(this.ai, this.player, step, this.gameMode);
+    const playerEvents = updateCharacter(this.player, input, this.ai, step, this.gameMode);
+    const aiEvents = updateCharacter(this.ai, aiInput, this.player, step, this.gameMode);
     this.separateFighters();
     if (playerEvents.startedAttack) {
       this.record(playerEvents.startedAttack === "normalAttack" ? "attack" : "heavyAttack");
@@ -129,12 +138,12 @@ export class GameEngine {
     if (playerEvents.guardStarted) this.record("guard");
     if (playerEvents.heavyMiss) this.heavyMissWindow = 1.4;
     this.movementRecordTimer += step;
-    if (this.movementRecordTimer >= 0.65 && input.move !== 0 && this.player.action === "run") {
-      this.record(input.move === this.player.facing ? "approach" : "retreat");
+    if (this.movementRecordTimer >= 0.65 && (input.move !== 0 || (this.gameMode === "3d" && input.depth)) && this.player.action === "run") {
+      this.record(input.move * (this.ai.x - this.player.x) + (this.gameMode === "3d" ? (input.depth ?? 0) * (this.ai.z - this.player.z) : 0) >= 0 ? "approach" : "retreat");
       this.movementRecordTimer = 0;
     }
-    const playerHit = resolveAttack(this.player, this.ai);
-    const aiHit = resolveAttack(this.ai, this.player);
+    const playerHit = resolveAttack(this.player, this.ai, this.gameMode);
+    const aiHit = resolveAttack(this.ai, this.player, this.gameMode);
     if (playerHit) { this.onHit(playerHit, "player"); if (playerHit.kind === "hit" || playerHit.kind === "break") this.decisionTimer = DIFFICULTIES[this.difficulty].interval / 1000; }
     if (aiHit) this.onHit(aiHit, "ai");
     if (this.player.hp <= 0 || this.ai.hp <= 0) {
@@ -148,6 +157,7 @@ export class GameEngine {
   snapshot(): GameSnapshot {
     return {
       paused: this.paused,
+      gameMode: this.gameMode,
       player: { ...this.player }, ai: { ...this.ai }, match: { ...this.match }, difficulty: this.difficulty,
       mode: this.mode, prediction: this.prediction, lastAiAction: this.lastAiAction,
       lastJevDecision: this.lastJevDecision, jevLatency: this.jevLatency, decisionTime: this.decisionTime,
@@ -166,6 +176,7 @@ export class GameEngine {
   }
 
   private separateFighters(): void {
+    if (this.gameMode === "3d") { separateSpatialFighters(this.player, this.ai); return; }
     const dx = this.ai.x - this.player.x;
     const overlap = 43 - Math.abs(dx);
     if (overlap > 0 && Math.abs(this.ai.y - this.player.y) < 68) {
@@ -182,7 +193,7 @@ export class GameEngine {
       const angle = Math.random() * Math.PI * 2;
       const speed = 90 + Math.random() * 230;
       const life = 0.2 + Math.random() * 0.25;
-      this.effects.push({ x: hit.x, y: hit.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life, maxLife: life, color, size: 2 + Math.random() * 4 });
+      this.effects.push({ x: hit.x, y: hit.y, z: hit.z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life, maxLife: life, color, size: 2 + Math.random() * 4 });
     }
     this.shake = hit.kind === "hit" ? Math.min(8, hit.damage * 0.3) : 3;
     this.hitStop = hit.kind === "hit" ? (hit.damage > 20 ? 0.08 : 0.045) : 0.025;
@@ -190,7 +201,7 @@ export class GameEngine {
 
   private record(action: Prediction): void {
     const contexts: BehaviorContext[] = [];
-    if (this.controller.intent === "approach" && Math.abs(this.ai.x - this.player.x) < 260) contexts.push("whenAiApproaches");
+    if (this.controller.intent === "approach" && groundDistance(this.ai, this.player, this.gameMode) < 260) contexts.push("whenAiApproaches");
     if (this.heavyMissWindow > 0) contexts.push("afterHeavyMiss");
     if (this.player.hp / MAX_HP <= 0.3) contexts.push("lowHp");
     this.tracker.record(action, contexts);
@@ -200,7 +211,7 @@ export class GameEngine {
     return {
       aiHpRatio: Number((this.ai.hp / MAX_HP).toFixed(2)), playerHpRatio: Number((this.player.hp / MAX_HP).toFixed(2)),
       aiStaminaRatio: Number((this.ai.stamina / MAX_STAMINA).toFixed(2)), playerStaminaRatio: Number((this.player.stamina / MAX_STAMINA).toFixed(2)),
-      distance: Math.round(Math.abs(this.ai.x - this.player.x)),
+      distance: Math.round(groundDistance(this.ai, this.player, this.gameMode)),
       playerIsAttacking: this.player.action === "normalAttack" || this.player.action === "heavyAttack",
       playerIsHeavyAttacking: this.player.action === "heavyAttack",
       playerIsGuarding: this.player.guarding,
