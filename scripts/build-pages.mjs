@@ -29,4 +29,5 @@ await build({
 
 await copyFile("static-pages/index.html", path.join(output, "index.html"));
 await copyFile("static-pages/favicon.svg", path.join(output, "favicon.svg"));
+await copyFile("public/third-party-notices.txt", path.join(output, "third-party-notices.txt"));
 await writeFile(path.join(output, ".nojekyll"), "");

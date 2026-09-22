@@ -38,9 +38,18 @@ npm run dev
 | K | 強攻撃 |
 | L | 回避 |
 | I | ガード（押している間） |
+| Esc | 一時停止・再開 |
 | F3 | デバッグ表示の切り替え |
 
 キー定義は `src/game/constants.ts` にあります。強攻撃・回避・ガードはスタミナを消費します。ガードでスタミナが尽きるとガード崩しになります。
+
+スマートフォン・タブレットでは画面下のタッチボタンでも遊べます。移動・ガードは押している間、攻撃・回避・ジャンプは押したときに入力します。複数のボタンを同時に使えます。画面やタブを離れると対戦を自動で一時停止します。「操作方法」を開いている間も停止し、閉じると元の状態に戻ります。全画面表示、演出の動きを抑える設定、難易度の保存に対応しています。
+
+## 画面と素材
+
+対戦エリアを中心に、体力・スタミナ・ラウンド数と相手の予測を配置しています。夕暮れの道場とファイターは Canvas で描画し、外部画像や外部フォントの読み込みを待たずに開始できます。体力・予測バーは滑らかに更新し、OS の「視差効果を減らす」設定にも対応します。
+
+操作アイコンには GitHub の [Lucide](https://github.com/lucide-icons/lucide) を公式 `lucide-react` パッケージ経由で使用しています。ISC / MIT の著作権表示は `public/third-party-notices.txt` に同梱し、公開画面の「素材クレジット」から確認できます。
 
 ## 難易度とプレイヤー行動
 
@@ -58,7 +67,7 @@ Jev の実通信には有効な API キーとネットワーク接続が必要�
 
 ## GitHub Pages 版
 
-`npm run build:pages` で `out/` に静的サイトを生成します。`main` への push で `.github/workflows/deploy-pages.yml` がテスト・ビルド・公開を行います。GitHub のリポジトリ設定で Pages の公開元を「GitHub Actions」にしてください。公開先は [https://nosuke1729.github.io/jevgame/](https://nosuke1729.github.io/jevgame/) です。PC ブラウザーでキーボード操作できます。
+`npm run build:pages` で `out/` に静的サイトを生成します。`main` への push で `.github/workflows/deploy-pages.yml` がテスト・ビルド・公開を行います。GitHub のリポジトリ設定で Pages の公開元を「GitHub Actions」にしてください。公開先は [https://nosuke1729.github.io/jevgame/](https://nosuke1729.github.io/jevgame/) です。キーボードとタッチ操作に対応しています。
 
 GitHub Pages はサーバー側 API を実行できないため、公開版は Cloudflare Worker を介して Jev に接続します。Worker が利用できない場合は、プレイヤー行動の記録と予測を使う標準AIに切り替わります。ローカルの Next.js 版でも Jev を使用できます。
 

@@ -8,9 +8,45 @@ import { PlayerBehaviorTracker } from "../src/game/ai/PlayerBehaviorTracker";
 import { advanceMatch, createMatch, finishRound, startMatch } from "../src/game/state/MatchManager";
 import { buildJevRequest, parseJevResponse } from "../src/lib/jev/JevClient";
 import { validState } from "../src/lib/jev/validate";
+import { GameEngine } from "../src/game/GameEngine";
 import type { Controls, DecisionState } from "../src/game/types";
 
 const controls = (patch: Partial<Controls> = {}): Controls => ({ ...EMPTY_CONTROLS, ...patch });
+
+test("pause freezes the round, fighters and effects, and resume continues the same match", () => {
+  const game = new GameEngine();
+  game.start("easy");
+  game.effects.push({ x: 10, y: 20, vx: 30, vy: 40, life: 1, maxLife: 1, color: "white", size: 3 });
+  game.setPaused(true);
+  const before = game.snapshot();
+  for (let i = 0; i < 120; i++) game.update(1 / 60, controls({ move: 1, heavyAttack: true }));
+  assert.deepEqual(game.snapshot(), before);
+  assert.equal(game.effects[0].life, 1);
+  game.setPaused(false);
+  game.update(1 / 60, controls());
+  assert.ok(game.match.phaseTime > before.match.phaseTime);
+  assert.equal(game.match.round, 1);
+  assert.equal(game.player.hp, 100);
+  game.setPaused(true);
+  game.toTitle();
+  assert.equal(game.paused, false);
+});
+
+test("a Jev response started before pause cannot modify the paused game", async (t) => {
+  let resolveRequest: ((response: Response) => void) | undefined;
+  t.mock.method(globalThis, "fetch", () => new Promise<Response>(resolve => { resolveRequest = resolve; }));
+  const game = new GameEngine();
+  game.start("normal");
+  game.match.phase = "fighting";
+  game.update(1 / 60, controls());
+  assert.ok(resolveRequest);
+  game.setPaused(true);
+  const paused = game.snapshot();
+  resolveRequest!(Response.json({ ...game.prediction, nextAction: "guard" }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(game.snapshot(), paused);
+  assert.equal(game.lastJevDecision, null);
+});
 
 test("normal and heavy attacks have distinct timing, damage and stamina costs", () => {
   const player = createFighter("player");

@@ -9,6 +9,7 @@ import { advanceMatch, createMatch, finishRound, startMatch } from "./state/Matc
 import type { Controls, Decision, DecisionState, Difficulty, Effect, Fighter, GameSnapshot, Intent, Mode, Prediction } from "./types";
 
 export class GameEngine {
+  paused = false;
   player = createFighter("player");
   ai = createFighter("ai");
   match = createMatch();
@@ -37,6 +38,7 @@ export class GameEngine {
   constructor() { this.prediction = fallbackDecision(this.decisionState(), "normal"); }
 
   start(difficulty: Difficulty): void {
+    this.paused = false;
     this.difficulty = difficulty;
     this.player = createFighter("player");
     this.ai = createFighter("ai");
@@ -62,6 +64,7 @@ export class GameEngine {
   }
 
   toTitle(): void {
+    this.paused = false;
     this.match = createMatch();
     this.player = createFighter("player");
     this.ai = createFighter("ai");
@@ -81,7 +84,16 @@ export class GameEngine {
     this.queuedIntent = null;
   }
 
+  setPaused(paused: boolean): void {
+    if (this.match.phase === "title" || this.match.phase === "finished" || this.paused === paused) return;
+    this.paused = paused;
+    this.decisionId++;
+    this.requestPending = false;
+    this.queuedIntent = null;
+  }
+
   update(dt: number, input: Controls): void {
+    if (this.paused) return;
     const step = Math.min(dt, 0.035);
     this.elapsed += step;
     this.fps = this.fps * 0.9 + (1 / Math.max(dt, 0.001)) * 0.1;
@@ -135,6 +147,7 @@ export class GameEngine {
 
   snapshot(): GameSnapshot {
     return {
+      paused: this.paused,
       player: { ...this.player }, ai: { ...this.ai }, match: { ...this.match }, difficulty: this.difficulty,
       mode: this.mode, prediction: this.prediction, lastAiAction: this.lastAiAction,
       lastJevDecision: this.lastJevDecision, jevLatency: this.jevLatency, decisionTime: this.decisionTime,
@@ -143,6 +156,7 @@ export class GameEngine {
   }
 
   private resetFighters(): void {
+    this.requestPending = false;
     this.player = createFighter("player");
     this.ai = createFighter("ai");
     this.controller = new AIController();
@@ -211,7 +225,7 @@ export class GameEngine {
     void fetch(JEV_DECISION_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) })
       .then(async (response) => { if (!response.ok) throw new Error("Jev unavailable"); return response.json() as Promise<Decision>; })
       .then((decision) => {
-        if (id !== this.decisionId || this.match.phase !== "fighting" || performance.now() - started > 900) return;
+        if (id !== this.decisionId || this.paused || this.match.phase !== "fighting" || performance.now() - started > 900) return;
         if (!decision || typeof decision.nextAction !== "string" || typeof decision.playerPrediction !== "string" || !decision.predictionProbabilities) throw new Error("Invalid decision");
         this.mode = "jev";
         this.jevLatency = Math.round(performance.now() - started);
@@ -220,8 +234,8 @@ export class GameEngine {
         this.prediction = decision;
         this.queueIntent(decision.nextAction);
       })
-      .catch(() => { this.mode = "fallback"; this.retryAt = performance.now() + 12000; })
-      .finally(() => { this.requestPending = false; });
+      .catch(() => { if (id === this.decisionId) { this.mode = "fallback"; this.retryAt = performance.now() + 12000; } })
+      .finally(() => { if (id === this.decisionId) this.requestPending = false; });
   }
 
   private queueIntent(action: Intent): void {

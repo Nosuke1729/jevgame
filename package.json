@@ -13,6 +13,7 @@
     "check:jev": "node --import tsx scripts/check-jev.ts"
   },
   "dependencies": {
+    "lucide-react": "^1.47.0",
     "next": "16.0.10",
     "react": "19.2.1",
     "react-dom": "19.2.1"

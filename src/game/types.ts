@@ -92,6 +92,7 @@ export interface MatchState {
 }
 
 export interface GameSnapshot {
+  paused: boolean;
   player: Fighter;
   ai: Fighter;
   match: MatchState;
